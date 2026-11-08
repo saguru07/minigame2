@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thermite Memory Minigame</title>
+<style>
+:root{--bg:#f2f4f7;--panel:#fff;--text:#14181f;--muted:#5d6675;--cell:#d5dae2;--lit:#1fb86a;--bad:#e5484d;--accent:#1fb86a;--border:#c3cad6;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1116;--panel:#171c24;--text:#e7ebf1;--muted:#8d97a8;--cell:#2a3140;--border:#2f3747;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1116;--panel:#171c24;--text:#e7ebf1;--muted:#8d97a8;--cell:#2a3140;--border:#2f3747;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;display:flex;justify-content:center;padding:20px}
+main{width:100%;max-width:480px;text-align:center}
+h1{font-size:1.4rem;margin:8px 0 4px}
+.sub{color:var(--muted);font-size:.9rem;margin:0 0 16px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px;font-size:.8rem;color:var(--muted)}
+.stat b{display:block;font-size:1.2rem;color:var(--text);font-variant-numeric:tabular-nums}
+.opts{display:flex;gap:12px;justify-content:center;margin-bottom:14px;font-size:.9rem;flex-wrap:wrap}
+select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font:inherit}
+.info{color:var(--muted);font-size:.85rem;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.status{height:1.5rem;font-weight:600;margin-bottom:8px;letter-spacing:.05em}
+#grid{display:grid;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px;margin:0 auto 14px;aspect-ratio:1}
+.c{background:var(--cell);border:0;border-radius:8px;cursor:pointer;transition:background .12s,transform .1s;padding:0}
+.c:active{transform:scale(.94)}
+.c.lit{background:var(--lit)}
+.c.ok{background:var(--lit)}
+.c.bad{background:var(--bad)}
+.c.miss{background:var(--lit);opacity:.45}
+#grid.lock .c{cursor:default}
+button.go{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:12px 32px;font:inherit;font-weight:700;cursor:pointer}
+button.go:disabled{opacity:.5;cursor:default}
+#stage{position:relative;width:100%;margin:0 auto 14px}
+#stage #grid{margin:0}
+#intro{position:absolute;inset:0;background:#000;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;text-align:center;padding:16px;z-index:2}
+#intro.hide{display:none}
+#introBox{display:flex;flex-direction:column;align-items:center;gap:14px}
+#startBtn{background:transparent;color:#fff;border:2px solid #fff;border-radius:6px;padding:14px 44px;font:inherit;font-size:1.4rem;font-weight:700;letter-spacing:.2em;cursor:pointer}
+#startBtn:hover{background:#fff;color:#000}
+.sec{font-size:1.05rem;font-weight:600}
+.cd{font-size:4rem;font-weight:800;line-height:1}
+.gr{font-size:1.3rem;letter-spacing:.1em}
+.note{color:var(--muted);font-size:.75rem;margin-top:18px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Thermite Memory Minigame</h1>
+  <p class="sub">Ingat posisi kotak yang menyala, lalu klik kotak yang sama setelah semuanya disembunyikan.</p>
+  <div class="opts">
+    <label>Kecepatan
+      <select id="speed"><option value="2000">2s</option><option value="3000">3s</option><option value="4000">4s</option><option value="5000">5s</option><option value="6000" selected>6s</option><option value="8000">8s</option></select>
+    </label>
+    <label>Grid
+      <select id="size"><option value="5">5x5</option><option value="6">6x6</option><option value="7" selected>7x7</option><option value="8">8x8</option></select>
+    </label>
+  </div>
+  <div class="info" id="info"></div>
+  <div class="status" id="status">Tekan START</div>
+  <div id="stage">
+    <div id="grid" class="lock"></div>
+    <div id="intro"><div id="introBox"></div></div>
+  </div>
+  <p class="note">Versi tiruan buatan sendiri, bukan salinan situs aslinya.</p>
+</main>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)||{style:{}}};
+  var gridEl=$('grid'),statusEl=$('status'),goBtn=$('go');
+  var state='idle',size=7,targets=[],found=0,miss=0,MAXMISS=3,streak=0,max=0,best=0,t0=0,raf=0,hideT=0;
+  function load(){try{max=+localStorage.getItem('thm_max')||0;best=+localStorage.getItem('thm_best')||0}catch(e){}
+    $('max').textContent=max;$('best').textContent=best.toFixed(3)}
+  function save(){try{localStorage.setItem('thm_max',max);localStorage.setItem('thm_best',best)}catch(e){}}
+  function count(){return Math.round(size*size*0.25)}
+  function upd(){$('info').textContent='Kotak menyala: '+count()+'  |  Kesalahan: '+miss+' / '+MAXMISS}
+  function build(){
+    size=+$('size').value;
+    upd();
+    gridEl.innerHTML='';
+    gridEl.style.gridTemplateColumns='repeat('+size+',1fr)';
+    for(var i=0;i<size*size;i++){var b=document.createElement('button');b.className='c';b.dataset.i=i;
+      b.setAttribute('aria-label','Kotak '+(i+1));gridEl.appendChild(b)}
+  }
+  function cells(){return gridEl.children}
+  function tick(){$('time').textContent=((performance.now()-t0)/1000).toFixed(3);raf=requestAnimationFrame(tick)}
+  function start(){
+    clearTimeout(hideT);cancelAnimationFrame(raf);
+    found=0;miss=0;build();state='show';
+    gridEl.classList.add('lock');
+    var n=size*size,cnt=count(),set={};
+    targets=[];
+    while(targets.length<cnt){var r=Math.floor(Math.random()*n);if(!set[r]){set[r]=1;targets.push(r)}}
+    targets.forEach(function(i){cells()[i].classList.add('lit')});
+    statusEl.textContent='HAFALKAN...';goBtn.disabled=true;$('time').textContent='0.000';
+    hideT=setTimeout(function(){
+      targets.forEach(function(i){cells()[i].classList.remove('lit')});
+      state='play';gridEl.classList.remove('lock');
+      statusEl.textContent='KLIK KOTAK YANG TADI MENYALA';
+      t0=performance.now();tick();
+    },+$('speed').value);
+  }
+  function end(win){
+    cancelAnimationFrame(raf);
+    var el=(performance.now()-t0)/1000;
+    $('time').textContent=el.toFixed(3);
+    gridEl.classList.add('lock');
+    if(win){
+      streak++;statusEl.textContent='BERHASIL!';
+      if(streak>max){max=streak}
+      if(best===0||el<best){best=el}
+      save();$('streak').textContent=streak;$('max').textContent=max;$('best').textContent=best.toFixed(3);
+      state='idle';hideT=setTimeout(start,900);
+    }else{
+      streak=0;$('streak').textContent=0;statusEl.textContent='GAGAL - AGAIN!';
+      targets.forEach(function(i){var c=cells()[i];if(!c.classList.contains('ok'))c.classList.add('miss')});
+      state='idle';hideT=setTimeout(function(){showIntro('AGAIN!')},1800);
+    }
+  }
+  gridEl.addEventListener('click',function(e){
+    var c=e.target.closest('.c');if(!c||state!=='play')return;
+    if(c.classList.contains('ok')||c.classList.contains('bad'))return;
+    var i=+c.dataset.i;
+    if(targets.indexOf(i)>-1){c.classList.add('ok');found++;if(found===targets.length){state='done';end(true)}}
+    else{c.classList.add('bad');miss++;upd();if(miss>=MAXMISS){state='done';end(false)}}
+  });
+  var intro=$('intro'),box=$('introBox'),POLICE='<svg width="72" height="72" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#1d4ed8" stroke="#fff" stroke-width="3"/><polygon points="32,18 35.5,27 45,27.5 37.5,33.5 40,43 32,37.5 24,43 26.5,33.5 19,27.5 28.5,27" fill="#fbbf24"/></svg>';
+  function showIntro(label){
+    intro.classList.remove('hide');
+    box.innerHTML='<button id="startBtn">'+label+'</button>';
+    statusEl.textContent='Tekan '+label;
+    $('startBtn').addEventListener('click',sequence);
+  }
+  function sequence(){
+    box.innerHTML=POLICE+'<div class="sec">Security check is required</div>';
+    statusEl.textContent='';
+    setTimeout(function(){
+      var n=3;
+      box.innerHTML='<div class="gr">Get ready</div><div class="cd" id="cd">3</div>';
+      var iv=setInterval(function(){
+        n--;
+        if(n>0){$('cd').textContent=n}
+        else{clearInterval(iv);intro.classList.add('hide');start()}
+      },1000);
+    },2500);
+  }
+  $('size').addEventListener('change',function(){if(state==='idle'){build()}});
+  load();build();showIntro('START');
+})();
+</script>
+</body>
+</html>
